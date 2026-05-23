@@ -1,20 +1,41 @@
 name: Sync from Upstream
 on:
   schedule:
-    - cron: '0 1 * * *'
+    - cron: '0 2 * * *'
   workflow_dispatch:
+
 jobs:
   sync:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
           ref: develop
-          fetch-depth: 1
+          # Full history: shallow clones break the merge base detection
+          # and silently turn upstream merges into no-ops.
+          fetch-depth: 0
+          # LFS objects (UI-test snapshots) live in upstream. We only
+          # move refs around — no checkout that would smudge LFS blobs —
+          # so leave the default lfs:false and let the push pass through.
+          lfs: false
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Sync from upstream
+
+      - name: Configure git identity
         run: |
+          git config user.name  "ISI-Master sync bot"
+          git config user.email "actions@users.noreply.github.com"
+
+      - name: Sync from upstream
+        env:
+          GIT_LFS_SKIP_SMUDGE: '1'
+        run: |
+          set -euo pipefail
           git remote add upstream https://github.com/element-hq/element-x-ios.git
-          git fetch upstream develop --depth=1
-          git merge upstream/develop --allow-unrelated-histories -m "Sync from upstream" || true
+          # Full fetch; no --depth, no --allow-unrelated-histories.
+          # We share history with upstream (this is a fork), so a normal
+          # merge resolves cleanly or fails loudly on real conflicts.
+          git fetch upstream develop
+          git merge --no-edit upstream/develop
           git push origin develop
